@@ -37,21 +37,34 @@ namespace WindowsSnapshots
         public string lastWindowText = null;
         public Timer checkTimer = new Timer();
         public Timer captureTimer = new Timer();
+        public Timer recaptureTimer = new Timer();
         public List<IntPtr> windowOrder = new List<IntPtr>();
 
         public WindowBtnManager(Form parent, int startIdx = 0, int endIdx = 0) : base(parent, startIdx, endIdx)
         {
             captureTimer.Enabled = false;
             captureTimer.Tick += captureTimer_Tick;
+            captureTimer.Interval = 250;
             captureTimer.Stop();
+
             checkTimer.Enabled = true;
             checkTimer.Tick += checkTimer_Tick;
+            checkTimer.Interval = 100;
             checkTimer.Start();
+
+            recaptureTimer.Enabled = false;
+            recaptureTimer.Tick += recaptureTimer_Tick;
+            recaptureTimer.Interval = 1000;
+            recaptureTimer.Start();
         }
 
         public override void OnClick(int idx)
         {
             Debug.WriteLine("Clicked button at index " + idx + " for window button manager");
+            if (idx >= windowOrder.Count || windowOrder[idx] == null)
+            {
+                return;
+            }
             if (SetForegroundWindow(windowOrder[idx]) != 1)
             {
                 Debug.WriteLine("Failed to set foreground window");
@@ -102,12 +115,11 @@ namespace WindowsSnapshots
             if ((currWindow != lastWindow || currText != lastWindowText) &&
                 currWindow != parent.Handle)
             {
-                // stop the timer, in case it was already started
-                captureTimer.Enabled = false;
-                captureTimer.Stop();
-
-                // set some variables
-
+                // check if the timer was already started
+                if (captureTimer.Enabled)
+                {
+                    return;
+                }
 
                 // start the timer
                 captureTimer.Enabled = true;
@@ -151,6 +163,17 @@ namespace WindowsSnapshots
             }
         }
 
+        private void recaptureTimer_Tick(object sender, EventArgs e)
+        {
+            IntPtr currWindow = GetForegroundWindow();
+            string currText = GetActiveWindowTitle();
+
+            if (currWindow == lastWindow && currText == lastWindowText)
+            {
+                captureTimer_Tick(sender, e);
+            }
+        }
+
         private int GetWindowIdx(IntPtr handle)
         {
             // insert?
@@ -167,6 +190,12 @@ namespace WindowsSnapshots
                 windowOrder.Remove(handle);
                 windowOrder.Insert(0, handle);
                 btnIdx = 0;
+
+                // update button images
+                for (int i = endIdx - 1; i > startIdx; i--)
+                {
+                    btns[i].SetImage(btns[i - 1].img);
+                }
             }
 
             return btnIdx;

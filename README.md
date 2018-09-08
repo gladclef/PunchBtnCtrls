@@ -15,4 +15,4 @@ Images are sent via serial COM port from the C# program to the Arduino, one row 
 As images continue to remain static, the low-res images are replaced with hi-res images. This is a GIF illustrating that process:
 
 ![Demo GIF](https://github.com/gladclef/PunchBtnCtrls/blob/master/PunchBtnCtrls/resources/demos/PushImageSmall.GIF)
-![Full Resolution](https://beanweb.us/me/projects/PunchBtnCtrls/PushImage.GIF "Pushing Screenshots Illustration")
+[Full Resolution](https://beanweb.us/me/projects/PunchBtnCtrls/PushImage.GIF)

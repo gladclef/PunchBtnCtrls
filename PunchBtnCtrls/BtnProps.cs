@@ -16,6 +16,7 @@ namespace WindowsSnapshots
         public Form parent;
         public Control pictureBox;
         public BtnManager.clickCallback OnClick = null;
+        public bool updated = false;
 
         public BtnProps(int idx, Form parent, BtnManager.clickCallback OnClick)
         {
@@ -58,6 +59,11 @@ namespace WindowsSnapshots
         public void SetImage(Bitmap img)
         {
             this.img = img;
+        }
+
+        public void SetUpdated(bool updated)
+        {
+            this.updated = updated;
         }
     }
 }

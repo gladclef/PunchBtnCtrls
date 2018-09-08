@@ -44,17 +44,25 @@ namespace WindowsSnapshots
         {
             List<BtnProps> btns = GetBtns();
 
-            for (int i = 0; i < btns.Count; i++)
+            for (int screenIdx = 0; screenIdx < btns.Count; screenIdx++)
             {
-                Bitmap btnImg = btns[i].img;
-                if (btnImg != GetImg(i))
+                if (!btns[screenIdx].updated)
+                    continue;
+                btns[screenIdx].SetUpdated(false);
+
+                // update the button image in the GUI window
+                Bitmap btnImg = btns[screenIdx].img;
+                if (btnImg != GetImg(screenIdx))
                 {
-                    imgs[i] = btnImg;
-                    ResizeImageForPB(GetPictureBox(i), btnImg);
+                    imgs[screenIdx] = btnImg;
+                    ResizeImageForPB(GetPictureBox(screenIdx), btnImg);
                 }
+
+                // update the button image on the Arduino
+                comm.QueueImage(btnImg, screenIdx);
             }
-            
-            comm.SendTestImage(160,128);
+
+            comm.Update();
         }
 
         private Bitmap GetImg(int i)

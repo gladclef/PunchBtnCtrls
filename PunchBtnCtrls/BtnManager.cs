@@ -72,9 +72,9 @@ namespace WindowsSnapshots
             {
                 clickLock.WaitOne();
                 
-                for (int i = btns.Count; i < startIdx; i++)
+                for (int screenIdx = btns.Count; screenIdx < startIdx; screenIdx++)
                 {
-                    btns.Add(new BtnProps(i, parent, null));
+                    btns.Add(new BtnProps(screenIdx, parent, null));
                 }
                 int startCreateIdx = Math.Max(startIdx, btns.Count);
                 for (int i = startCreateIdx; i < endIdx; i++)
@@ -91,23 +91,23 @@ namespace WindowsSnapshots
         /// <summary>
         /// Clears the button at the given index and moves it to the endIdx-1 position.
         /// </summary>
-        /// <param name="idx">The index of the button to clear.</param>
-        public void ClearBtn(int idx)
+        /// <param name="screenIdx">The index of the button to clear.</param>
+        public void ClearBtn(int screenIdx)
         {
-            if (idx < startIdx || idx >= endIdx)
+            if (screenIdx < startIdx || screenIdx >= endIdx)
             {
-                throw new IndexOutOfRangeException("Index for this button manager must be in [" + startIdx + ", " + (endIdx - 1) + "], was " + idx);
+                throw new IndexOutOfRangeException("Index for this button manager must be in [" + startIdx + ", " + (endIdx - 1) + "], was " + screenIdx);
             }
 
             try
             {
                 clickLock.WaitOne();
-                for (int i = idx + 1; i < endIdx; i++)
+                for (int i = screenIdx + 1; i < endIdx; i++)
                 {
                     GetBtn(i).SetIndex(i - 1);
                 }
-                BtnProps btn = btns[idx];
-                btns.RemoveAt(idx);
+                BtnProps btn = btns[screenIdx];
+                btns.RemoveAt(screenIdx);
                 btns.Insert(endIdx - 1, btn);
                 btn.SetIndex(endIdx - 1);
                 btn.SetImage(null);
@@ -160,16 +160,16 @@ namespace WindowsSnapshots
             }
         }
 
-        public BtnProps GetBtn(int idx)
+        public BtnProps GetBtn(int screenIdx)
         {
-            if (idx < startIdx || idx >= endIdx)
+            if (screenIdx < startIdx || screenIdx >= endIdx)
             {
-                throw new IndexOutOfRangeException("Index for this button manager must be in [" + startIdx + ", " + (endIdx - 1) + "], was " + idx);
+                throw new IndexOutOfRangeException("Index for this button manager must be in [" + startIdx + ", " + (endIdx - 1) + "], was " + screenIdx);
             }
-            BtnProps btn = btns[idx];
-            if (btn.idx != idx)
+            BtnProps btn = btns[screenIdx];
+            if (btn.idx != screenIdx)
             {
-                throw new InvalidOperationException("The button at index " + idx + " has an internally registered index of " + idx);
+                throw new InvalidOperationException("The button at index " + screenIdx + " has an internally registered index of " + screenIdx);
             }
             return btn;
         }

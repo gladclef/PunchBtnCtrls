@@ -181,7 +181,7 @@ void drawRow(int rowIdx) {
 	} else {
 		uint16_t lineSize = WIDTH / colSpan;
 		uint16_t y = rowIdx * rowSpan;
-		uint8_t ye = y + rowSpan;
+//		uint8_t ye = y + rowSpan;
 		for (uint8_t i = 0; i < lineSize; i++)
 		{
 			tft.fillRect(i * colSpan, y, colSpan, rowSpan, rowBuf[i]);

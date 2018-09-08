@@ -115,6 +115,8 @@ namespace WindowsSnapshots
             if ((currWindow != lastWindow || currText != lastWindowText) &&
                 currWindow != parent.Handle)
             {
+                // TODO check if the window closed
+
                 // check if the timer was already started
                 if (captureTimer.Enabled)
                 {
@@ -139,10 +141,6 @@ namespace WindowsSnapshots
             if (screen != null &&
                 currWindow != parent.Handle)
             {
-                // get some window stats
-                lastWindow = currWindow;
-                lastWindowText = currText;
-
                 // Get the ordered window index.
                 // Don't do anything 
                 int windowIdx = GetWindowIdx(currWindow);
@@ -150,7 +148,15 @@ namespace WindowsSnapshots
                 if (btnIdx >= endIdx)
                     return;
 
-                // capture the screen, set the window text, and update the button
+                // check for window change
+                if (lastWindow != currWindow)
+                    btns[btnIdx].SetUpdated(true);
+
+                // get some window stats
+                lastWindow = currWindow;
+                lastWindowText = currText;
+
+                // get the capture the screen, set the window text, and update the button
                 parent.Text = currText;
                 Debug.WriteLine(lastWindowText);
                 Rect winSize = new Rect();
@@ -192,9 +198,9 @@ namespace WindowsSnapshots
                 btnIdx = 0;
 
                 // update button images
-                for (int i = endIdx - 1; i > startIdx; i--)
+                for (int screenIdx = endIdx - 1; screenIdx > startIdx; screenIdx--)
                 {
-                    btns[i].SetImage(btns[i - 1].img);
+                    btns[screenIdx].SetImage(btns[screenIdx - 1].img);
                 }
             }
 

@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Data;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO.Ports;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -16,11 +17,13 @@ namespace WindowsSnapshots
     {
         public List<Bitmap> imgs = new List<Bitmap>();
         public List<BtnManager> managers = new List<BtnManager>();
+        public ArduinoCommunication comm = null;
 
         public Form1()
         {
             InitializeComponent();
             managers.Add(new WindowBtnManager(this, 0, 4));
+            comm = new ArduinoCommunication(this.serialPort1);
         }
 
         public PictureBox GetPictureBox(int idx)
@@ -49,6 +52,22 @@ namespace WindowsSnapshots
                     imgs[i] = btnImg;
                     ResizeImageForPB(GetPictureBox(i), btnImg);
                 }
+            }
+
+            int[] line = new int[160];
+            byte[] colorBytes = new byte[4];
+            for (int i = 0; i < 160; i++)
+            {
+                byte color = Convert.ToByte(i * 255 / 160);
+                colorBytes[0] = color;
+                colorBytes[1] = color;
+                colorBytes[2] = color;
+                colorBytes[3] = color;
+                line[i] = BitConverter.ToInt32(colorBytes, 0);
+            }
+            for (int i = 0; i < 128; i++)
+            {
+                comm.SendLine(line, i);
             }
         }
 

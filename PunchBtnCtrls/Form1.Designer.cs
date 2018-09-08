@@ -36,6 +36,7 @@
             this.pbScreen4 = new System.Windows.Forms.PictureBox();
             this.pbScreen3 = new System.Windows.Forms.PictureBox();
             this.pbScreen2 = new System.Windows.Forms.PictureBox();
+            this.serialPort1 = new System.IO.Ports.SerialPort(this.components);
             ((System.ComponentModel.ISupportInitialize)(this.pbScreen1)).BeginInit();
             this.tableLayoutPanel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.pbScreen4)).BeginInit();
@@ -115,6 +116,11 @@
             this.pbScreen2.TabIndex = 1;
             this.pbScreen2.TabStop = false;
             // 
+            // serialPort1
+            // 
+            this.serialPort1.BaudRate = 115200;
+            this.serialPort1.PortName = "COM3";
+            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -140,6 +146,7 @@
         private System.Windows.Forms.PictureBox pbScreen2;
         private System.Windows.Forms.PictureBox pbScreen4;
         private System.Windows.Forms.PictureBox pbScreen3;
+        private System.IO.Ports.SerialPort serialPort1;
     }
 }
 

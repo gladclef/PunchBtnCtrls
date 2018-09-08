@@ -118,7 +118,7 @@
             // 
             // serialPort1
             // 
-            this.serialPort1.BaudRate = 115200;
+            this.serialPort1.BaudRate = 250000;
             this.serialPort1.PortName = "COM3";
             // 
             // Form1

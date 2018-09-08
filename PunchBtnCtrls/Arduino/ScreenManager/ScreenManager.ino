@@ -47,7 +47,8 @@ as well as Adafruit raw 1.8" TFT display
 
 //#define BAUD_9600
 //#define BAUD_57600
-#define BAUD_115200
+//#define BAUD_115200
+#define BAUD_250000
 
 #ifdef BAUD_9600
 #define BAUD 9600
@@ -66,6 +67,12 @@ as well as Adafruit raw 1.8" TFT display
 #define CHAR_COUNT_DELAY 2
 #define CHAR_READ_DELAY_MICROS 600
 #define SERIAL_WRITE_DELAY 2
+#endif
+#ifdef BAUD_250000
+#define BAUD 250000
+#define CHAR_COUNT_DELAY 1
+#define CHAR_READ_DELAY_MICROS 300
+#define SERIAL_WRITE_DELAY 1
 #endif
 
 #define Neutral 0
@@ -91,13 +98,15 @@ Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC, TFT_RST);
 //#define TFT_MOSI 11   // set these to be whatever pins you like!
 //Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
 
-uint16_t lineBuf[WIDTH];
+uint16_t rowBuf[WIDTH];
 unsigned char allSerial[WIDTH*2+10];
 unsigned char *incomingBytes;
 boolean serialDebugging = false;
-int currReadX = 0;
-int currReadY = 0;
+uint16_t currReadX = 0;
+uint16_t currReadY = 0;
 long mills = 0;
+uint16_t colSpan = 1;
+uint16_t rowSpan = 1;
 
 void setup(void) {
   Serial.begin(BAUD);
@@ -163,10 +172,29 @@ void loop() {
 	}
 }
 
-void drawLine(int lineIdx) {
-	for (int i = 0; i < WIDTH; i++)
-	{
-		tft.drawPixel(i, lineIdx, lineBuf[i]);
+void drawRow(int rowIdx) {
+	if (colSpan == 1 && rowSpan == 1) {
+		for (uint16_t i = 0; i < WIDTH; i++)
+		{
+			tft.drawPixel(i, rowIdx, rowBuf[i]);
+		}
+	} else {
+		uint16_t lineSize = WIDTH / colSpan;
+		uint16_t y = rowIdx * rowSpan;
+		uint8_t ye = y + rowSpan;
+		for (uint8_t i = 0; i < lineSize; i++)
+		{
+			tft.fillRect(i * colSpan, y, colSpan, rowSpan, rowBuf[i]);
+//			uint8_t xs = i * colSpan;
+//			uint8_t xe = xs + colSpan;
+//			for (uint8_t x = xs; i < xe; x++)
+//			{
+//				for (uint8_t y2 = y; y2 < ye; y2++)
+//				{
+//					tft.drawPixel(x, y2, rowBuf[i]);
+//				}
+//			}
+		}
 	}
 }
 
@@ -221,34 +249,7 @@ boolean interpretSerial(uint16_t numBytes)
   unsigned char command = incomingBytes[0];
   switch (command)
   {
-    case 'R': // restart image drawing
-//    	Serial.println("Restart");
-//  		delay(SERIAL_WRITE_DELAY);
-    	currReadX = 0;
-    	currReadY = 0;
-      return true;
-    case 'D': // draw the next part of the image
-//    	Serial.println("Draw");
-//  		delay(SERIAL_WRITE_DELAY);
-      uint16_t lineRead;
-      lineRead = numBytes-1;
-      for (int i = 0; i < lineRead; i+= 2)
-      {
-  			lineBuf[currReadX]  = ((uint8_t)incomingBytes[i + 1]) << 8;
-  			lineBuf[currReadX] |= (uint8_t)incomingBytes[i + 2];
-      	currReadX++;
-      }
-      if (currReadX >= WIDTH)
-      {
-      	long newTime = millis();
-      	Serial.println(newTime - mills);
-  			mills = newTime;
-      	drawLine(currReadY);
-      	currReadX = 0;
-      	currReadY++;
-      }
-      return true;
-    case 'C':
+    case 'C': // Color command: set the testing fill color
     	uint8_t idx;
     	idx = 2;
     	if (numBytes < 2)
@@ -266,6 +267,38 @@ boolean interpretSerial(uint16_t numBytes)
     	Serial.println(currentFillColor);
 			tft.fillScreen(currentFillColor << currentFillShift);
     	break;
+    case 'L': // Line Part command: draw the next line part of the image
+//    	Serial.println("Draw");
+//  		delay(SERIAL_WRITE_DELAY);
+      uint16_t lineRead;
+      lineRead = numBytes-1;
+      for (int i = 0; i < lineRead; i+= 2)
+      {
+  			rowBuf[currReadX]  = ((uint8_t)incomingBytes[i + 1]) << 8;
+  			rowBuf[currReadX] |= (uint8_t)incomingBytes[i + 2];
+      	currReadX++;
+      }
+      if (currReadX * colSpan >= WIDTH)
+      {
+      	drawRow(currReadY);
+      	currReadX = 0;
+      	currReadY++;
+      }
+      return true;
+    case 'R': // restart image drawing
+//    	Serial.println("Restart");
+//  		delay(SERIAL_WRITE_DELAY);
+    	currReadX = 0;
+    	currReadY = 0;
+      return true;
+    case 'S': // Span Size command
+      if (numBytes < 5)
+      	return false;
+    	colSpan  = ((uint8_t)incomingBytes[1]) << 8;
+    	colSpan |= ((uint8_t)incomingBytes[2]);
+    	rowSpan  = ((uint8_t)incomingBytes[3]) << 8;
+    	rowSpan |= ((uint8_t)incomingBytes[4]);
+    	return true;
     default:
 			char errStr[40];
 			sprintf(errStr, "Unrecognized command \"%c\" (%d)", (char)command, (int)command);

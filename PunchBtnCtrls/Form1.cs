@@ -53,22 +53,8 @@ namespace WindowsSnapshots
                     ResizeImageForPB(GetPictureBox(i), btnImg);
                 }
             }
-
-            int[] line = new int[160];
-            byte[] colorBytes = new byte[4];
-            for (int i = 0; i < 160; i++)
-            {
-                byte color = Convert.ToByte(i * 255 / 160);
-                colorBytes[0] = color;
-                colorBytes[1] = color;
-                colorBytes[2] = color;
-                colorBytes[3] = color;
-                line[i] = BitConverter.ToInt32(colorBytes, 0);
-            }
-            for (int i = 0; i < 128; i++)
-            {
-                comm.SendLine(line, i);
-            }
+            
+            comm.SendTestImage(160,128);
         }
 
         private Bitmap GetImg(int i)

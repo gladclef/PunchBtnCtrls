@@ -46,6 +46,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AbstractCommunication.cs" />
     <Compile Include="ArduinoCommunication.cs" />
     <Compile Include="BitBashing.cs" />
     <Compile Include="BtnManager.cs" />

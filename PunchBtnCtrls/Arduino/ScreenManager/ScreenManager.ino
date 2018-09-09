@@ -107,6 +107,7 @@ uint16_t currReadY = 0;
 long mills = 0;
 uint16_t colSpan = 1;
 uint16_t rowSpan = 1;
+uint8_t activityIndicator = 1;
 
 void setup(void) {
   Serial.begin(BAUD);
@@ -173,11 +174,14 @@ void loop() {
 }
 
 void drawRow(int rowIdx) {
+	bool drawActivityIndicator = true;
+	
 	if (colSpan == 1 && rowSpan == 1) {
 		for (uint16_t i = 0; i < WIDTH; i++)
 		{
 			tft.drawPixel(i, rowIdx, rowBuf[i]);
 		}
+		drawActivityIndicator = (rowIdx < HEIGHT-1);
 	} else {
 		uint16_t lineSize = WIDTH / colSpan;
 		uint16_t y = rowIdx * rowSpan;
@@ -195,6 +199,13 @@ void drawRow(int rowIdx) {
 //				}
 //			}
 		}
+	}
+
+	if (drawActivityIndicator)
+	{
+		tft.drawPixel(activityIndicator-1, HEIGHT-1, 0x0000);
+		tft.drawPixel(activityIndicator, HEIGHT-1, 0xFFFF);
+		activityIndicator = (activityIndicator >= WIDTH) ? 1 : activityIndicator+1;
 	}
 }
 

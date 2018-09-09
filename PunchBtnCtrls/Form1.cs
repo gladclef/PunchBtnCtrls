@@ -15,6 +15,11 @@ namespace WindowsSnapshots
 {
     public partial class Form1 : Form
     {
+        /// <summary>Screens resolution in the x dimension.</summary>
+        public const uint WIDTH = 160;
+        /// <summary>Screens resolution in the y dimension.</summary>
+        public const uint HEIGHT = 128;
+
         public List<Bitmap> imgs = new List<Bitmap>();
         public List<BtnManager> managers = new List<BtnManager>();
         public ArduinoCommunication comm = null;
@@ -22,8 +27,12 @@ namespace WindowsSnapshots
         public Form1()
         {
             InitializeComponent();
-            managers.Add(new WindowBtnManager(this, 0, 4));
-            comm = new ArduinoCommunication(this.serialPort1);
+            comm = new ArduinoCommunication(this.serialPort1, WIDTH);
+            managers.Add(new WindowBtnManager(this, new uint[] { WIDTH }, new uint[] { HEIGHT }, 0, 4));
+            foreach (var manager in managers)
+            {
+                manager.SetComm(0, comm);
+            }
         }
 
         public PictureBox GetPictureBox(int idx)
@@ -57,12 +66,13 @@ namespace WindowsSnapshots
                     imgs[screenIdx] = btnImg;
                     ResizeImageForPB(GetPictureBox(screenIdx), btnImg);
                 }
-
-                // update the button image on the Arduino
-                comm.QueueImage(btnImg, screenIdx);
             }
 
-            comm.Update();
+            // update the managers (TODO replace with threads in the managers)
+            foreach (var manager in managers)
+            {
+                ((WindowBtnManager)manager).Update();
+            }
         }
 
         private Bitmap GetImg(int i)

@@ -32,6 +32,15 @@ namespace WindowsSnapshots
             public int Right;
             public int Bottom;
         }
+
+        /// <summary>The updates to be pushed immediately. Acts like a stack (push and pop from back).</summary>
+        private List<int> lowResUpdates = new List<int>();
+        /// <summary>The updates to be pushed seconarily. Acts like a queue (push to front, pop off back).</summary>
+        private List<int> medResUpdates = new List<int>();
+        /// <summary>The updates to be pushed tertiarily. Acts like a queue (push to front, pop off back).</summary>
+        private List<int> highResUpdates = new List<int>();
+        /// <summary>Used to syncronize accesses to the updates and the QueueImages() method.</summary>
+        private System.Threading.Mutex queueMutex = new System.Threading.Mutex();
         
         public IntPtr lastWindow = IntPtr.Zero;
         public string lastWindowText = null;
@@ -40,7 +49,10 @@ namespace WindowsSnapshots
         public Timer recaptureTimer = new Timer();
         public List<IntPtr> windowOrder = new List<IntPtr>();
 
-        public WindowBtnManager(Form parent, int startIdx = 0, int endIdx = 0) : base(parent, startIdx, endIdx)
+        /// <summary>
+        /// See constructor for <see cref="BtnManager"/>.
+        /// </summary>
+        public WindowBtnManager(Form parent, uint[] screenWidths, uint[] screenHeights, int startIdx = 0, int endIdx = 0) : base(parent, screenWidths, screenHeights, startIdx, endIdx)
         {
             captureTimer.Enabled = false;
             captureTimer.Tick += captureTimer_Tick;
@@ -142,21 +154,21 @@ namespace WindowsSnapshots
                 currWindow != parent.Handle)
             {
                 // Get the ordered window index.
-                // Don't do anything 
+                // Abort if the equivalent screen idx is not within this manager's range.
                 int windowIdx = GetWindowIdx(currWindow);
-                int btnIdx = startIdx + windowIdx;
-                if (btnIdx >= endIdx)
+                int screenIdx = startIdx + windowIdx;
+                if (screenIdx >= endIdx)
                     return;
 
                 // check for window change
                 if (lastWindow != currWindow)
-                    btns[btnIdx].SetUpdated(true);
+                    btns[screenIdx].SetUpdated(true);
 
                 // get some window stats
                 lastWindow = currWindow;
                 lastWindowText = currText;
 
-                // get the capture the screen, set the window text, and update the button
+                // get the capture of the screen, set the window text, and update the button
                 parent.Text = currText;
                 Debug.WriteLine(lastWindowText);
                 Rect winSize = new Rect();
@@ -164,7 +176,12 @@ namespace WindowsSnapshots
                 if ((winSize.Right - winSize.Left) > 0 &&
                     (winSize.Bottom - winSize.Top) > 0)
                 {
-                    btns[btnIdx].SetImage(screen);
+                    btns[screenIdx].SetImage(screen);
+                    if (btns[screenIdx].updated)
+                    {
+                        QueueImage(screenIdx);
+                        btns[screenIdx].updated = false;
+                    }
                 }
             }
         }
@@ -201,10 +218,157 @@ namespace WindowsSnapshots
                 for (int screenIdx = endIdx - 1; screenIdx > startIdx; screenIdx--)
                 {
                     btns[screenIdx].SetImage(btns[screenIdx - 1].img);
+                    QueueImage(screenIdx, false);
                 }
             }
 
             return btnIdx;
+        }
+
+        /// <summary>
+        /// Queues up an image to be drawn to an Arduino screen.
+        /// A low-res image (8x8) will be loaded first and in reverse queue order for speed,
+        /// then a medium-res image (40x32) will be loaded in queue order,
+        /// then finally a full-res image (160x128) will be loaded in queue order.
+        /// 
+        /// Queueing up a new image for the same screen will
+        /// restart the process imediately and the old image data
+        /// will be forgotten.
+        /// </summary>
+        /// <param name="screenIdx">The screen to draw to.</param>
+        /// <param name="updateLowRes">True to push the image for the given screen in low resolution to the <see cref="comm"/></param>
+        /// <param name="updateMedRes">True to push the image for the given screen in medium resolution to the <see cref="comm"/></param>
+        /// <param name="updateHighRes">True to push the image for the given screen in high resolution to the <see cref="comm"/></param>
+        public void QueueImage(int screenIdx, bool updateLowRes = true, bool updateMedRes = true, bool updateHighRes = true)
+        {
+            try
+            {
+                queueMutex.WaitOne();
+
+                // discard previous updates
+                if (updateLowRes) lowResUpdates.Remove(screenIdx);
+                if (updateMedRes) medResUpdates.Remove(screenIdx);
+                if (updateHighRes) highResUpdates.Remove(screenIdx);
+
+                // add new update
+                if (updateLowRes) lowResUpdates.Add(screenIdx);
+                if (updateMedRes) medResUpdates.Insert(0, screenIdx);
+                if (updateHighRes) highResUpdates.Insert(0, screenIdx);
+
+                // reset the rowIdx for the updates, as necessary
+                BtnProps btn = btns[screenIdx];
+                if (updateLowRes) btn.rowIdx[0] = 0;
+                if (updateMedRes) btn.rowIdx[1] = 0;
+                if (updateHighRes) btn.rowIdx[2] = 0;
+            }
+            finally
+            {
+                queueMutex.ReleaseMutex();
+            }
+        }
+
+        /// <summary>
+        /// Draws lines from the images waiting in the update stacks/queues.
+        /// Only draws one line of the most low-res image to keep the thread responsive.
+        /// </summary>
+        /// <returns>True when an update succeeds or there is no update to do, false when an update fails.</returns>
+        public bool Update()
+        {
+            uint colSpan = 0;
+            uint rowSpan = 0;
+            int screenIdx = -1;
+            BtnProps btn = null;
+            Bitmap img = null;
+            int res = 0; // low (0), med (1), high (2)
+
+            try
+            {
+                queueMutex.WaitOne();
+
+                // get the quality to draw a line at
+                screenIdx = -1;
+                btn = null;
+                if (lowResUpdates.Count > 0)
+                {
+                    colSpan = 20;
+                    rowSpan = 16;
+                    screenIdx = lowResUpdates[0];
+                    btn = btns[screenIdx];
+                    res = 0;
+                    if ((btn.rowIdx[res] + 1) * rowSpan == btn.screenHeight) lowResUpdates.RemoveAt(0);
+                    if (btn.rowIdx[res] == 0) Console.WriteLine($"drawing low-rez {screenIdx}");
+                }
+                else if (medResUpdates.Count > 0)
+                {
+                    colSpan = 4;
+                    rowSpan = 4;
+                    screenIdx = medResUpdates[medResUpdates.Count - 1];
+                    btn = btns[screenIdx];
+                    res = 1;
+                    if ((btn.rowIdx[res] + 1) * rowSpan == btn.screenHeight) medResUpdates.RemoveAt(medResUpdates.Count - 1);
+                    if (btn.rowIdx[res] == 0) Console.WriteLine($"drawing med-rez {screenIdx}");
+                }
+                else if (highResUpdates.Count > 0)
+                {
+                    colSpan = 1;
+                    rowSpan = 1;
+                    screenIdx = highResUpdates[highResUpdates.Count - 1];
+                    btn = btns[screenIdx];
+                    res = 2;
+                    if ((btn.rowIdx[res] + 1) * rowSpan == btn.screenHeight) highResUpdates.RemoveAt(highResUpdates.Count - 1);
+                    if (btn.rowIdx[res] == 0) Console.WriteLine($"drawing high-rez {screenIdx}");
+                }
+
+                // for images we can't update, pretend like we did an update
+                if (btn == null || btn.comm == null)
+                {
+                    if (btn != null)
+                        btn.rowIdx[res]++;
+                    return true;
+                }
+
+                // get the image
+                img = btn.screenImg;
+
+                // calculate the line to draw
+                int[] line = new int[btn.screenWidth / colSpan];
+                for (uint col = 0; col < line.Length; col++)
+                {
+                    int x = (int)(col * colSpan);
+                    uint[] uc = new uint[4];
+                    for (int i = 0; i < colSpan; i++)
+                    {
+                        for (int j = 0; j < rowSpan; j++)
+                        {
+                            int y = (int)(btn.rowIdx[res] * rowSpan);
+                            Color c = img.GetPixel(x + i, y + j);
+                            uc[0] += c.R;
+                            uc[1] += c.G;
+                            uc[2] += c.B;
+                        }
+                    }
+                    byte[] bc = new byte[4];
+                    bc[0] = Convert.ToByte(uc[0] / (colSpan * rowSpan));
+                    bc[1] = Convert.ToByte(uc[1] / (colSpan * rowSpan));
+                    bc[2] = Convert.ToByte(uc[2] / (colSpan * rowSpan));
+                    line[col] = BitConverter.ToInt32(bc, 0);
+                }
+
+                // draw the line
+                if (!btn.comm.SendImageRow(line, btn.rowIdx[res], rowSpan))
+                    return false;
+
+                // prepare for next time this function is called
+                btn.rowIdx[res]++;
+                if (btn.rowIdx[res] * rowSpan >= btn.screenHeight)
+                    btn.rowIdx[res] = 0;
+            }
+            finally
+            {
+                queueMutex.ReleaseMutex();
+            }
+
+            return true;
         }
     }
 }

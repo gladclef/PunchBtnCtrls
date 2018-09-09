@@ -13,13 +13,21 @@ namespace WindowsSnapshots
     {
         public int idx = -1;
         public Bitmap img = null;
+        /// <summary>Like <see cref="img"/>, but appropriatly resized for the screen.</summary>
+        public Bitmap screenImg = null;
+        public uint screenWidth, screenHeight;
         public Form parent;
         public Control pictureBox;
         public BtnManager.clickCallback OnClick = null;
         public bool updated = false;
+        public AbstractCommunication comm = null;
+        /// <summary>row drawing update indexes for low (0), medium (1), and high resolution (2)</summary>
+        public uint[] rowIdx = new uint[3];
 
-        public BtnProps(int idx, Form parent, BtnManager.clickCallback OnClick)
+        public BtnProps(int idx, uint screenWidth, uint screenHeight, Form parent, BtnManager.clickCallback OnClick)
         {
+            this.screenWidth = screenWidth;
+            this.screenHeight = screenHeight;
             this.parent = parent;
             this.OnClick = OnClick;
             SetIndex(idx);
@@ -59,6 +67,7 @@ namespace WindowsSnapshots
         public void SetImage(Bitmap img)
         {
             this.img = img;
+            this.screenImg = new Bitmap(img, (int)screenWidth, (int)screenHeight);
         }
 
         public void SetUpdated(bool updated)

@@ -22,6 +22,9 @@ namespace WindowsSnapshots
         static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
 
         [DllImport("user32.dll")]
+        static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int count);
+
+        [DllImport("user32.dll")]
         private static extern IntPtr GetWindowRect(IntPtr hWnd, ref Rect rect);
 
         [StructLayout(LayoutKind.Sequential)]
@@ -48,6 +51,9 @@ namespace WindowsSnapshots
         public Timer captureTimer = new Timer();
         public Timer recaptureTimer = new Timer();
         public List<IntPtr> windowOrder = new List<IntPtr>();
+
+        string[] IgnoredWindowTitles = new string[] { "" };
+        string[] IgnoredWindowClassNames = new string[] { "" };
 
         /// <summary>
         /// See constructor for <see cref="BtnManager"/>.
@@ -84,17 +90,28 @@ namespace WindowsSnapshots
         }
 
         // from https://stackoverflow.com/questions/115868/how-do-i-get-the-title-of-the-current-active-window-using-c
-        private string GetActiveWindowTitle()
+        private string GetWindowTitle(IntPtr handle)
         {
             const int nChars = 256;
-            StringBuilder Buff = new StringBuilder(nChars);
-            IntPtr handle = GetForegroundWindow();
+            StringBuilder buff = new StringBuilder(nChars);
 
-            if (GetWindowText(handle, Buff, nChars) > 0)
+            if (GetWindowText(handle, buff, nChars) > 0)
             {
-                return Buff.ToString();
+                return buff.ToString();
             }
-            return null;
+            return "";
+        }
+
+        private string GetWindowClassName(IntPtr handle)
+        {
+            const int nChars = 256;
+            StringBuilder buff = new StringBuilder(nChars);
+
+            if (GetClassName(handle, buff, nChars) > 0)
+            {
+                return buff.ToString();
+            }
+            return "";
         }
 
         // from https://stackoverflow.com/questions/1163761/capture-screenshot-of-active-window/9087955#9087955
@@ -119,13 +136,26 @@ namespace WindowsSnapshots
             return result;
         }
 
+        private bool IsIgnoreWindow(IntPtr handle, string title = null, string className = null)
+        {
+            if (handle == parent.Handle)
+                return true;
+            title = (title == null) ? GetWindowTitle(handle) : title;
+            if (IgnoredWindowTitles.Contains(title))
+                return true;
+            className = (className == null) ? GetWindowClassName(handle) : className;
+            if (IgnoredWindowClassNames.Contains(className))
+                return true;
+            return false;
+        }
+
         private void checkTimer_Tick(object sender, EventArgs e)
         {
             IntPtr currWindow = GetForegroundWindow();
-            string currText = GetActiveWindowTitle();
+            string currText = GetWindowTitle(currWindow);
 
             if ((currWindow != lastWindow || currText != lastWindowText) &&
-                currWindow != parent.Handle)
+                !IsIgnoreWindow(currWindow, currText))
             {
                 // TODO check if the window closed
 
@@ -146,12 +176,12 @@ namespace WindowsSnapshots
             captureTimer.Enabled = false;
 
             IntPtr currWindow = GetForegroundWindow();
-            string currText = GetActiveWindowTitle();
+            string currText = GetWindowTitle(currWindow);
             Bitmap screen = GetActiveWindowScreenshot();
 
             // check if this window is valid
             if (screen != null &&
-                currWindow != parent.Handle)
+                !IsIgnoreWindow(currWindow, currText))
             {
                 // Get the ordered window index.
                 // Abort if the equivalent screen idx is not within this manager's range.
@@ -189,7 +219,7 @@ namespace WindowsSnapshots
         private void recaptureTimer_Tick(object sender, EventArgs e)
         {
             IntPtr currWindow = GetForegroundWindow();
-            string currText = GetActiveWindowTitle();
+            string currText = GetWindowTitle(currWindow);
 
             if (currWindow == lastWindow && currText == lastWindowText)
             {

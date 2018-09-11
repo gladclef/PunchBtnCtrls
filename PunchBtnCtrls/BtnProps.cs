@@ -74,18 +74,23 @@ namespace WindowsSnapshots
             pictureBox.Click += OnBtnClick;
         }
 
-        public void SetImage(Bitmap img)
+        public void SetImage(Bitmap img, bool doUpdate = false)
         {
             this.img = img;
-            this.screenImg = new Bitmap(img, (int)screenWidth, (int)screenHeight);
-            this.palette = ImageMagic.CalculatePalette(img, 256);
-            SetDoUpdatePalette(true);
-            paletteWriteIdx = 0;
+            if (doUpdate) SetDoUpdateImg(true);
         }
 
         public void SetDoUpdateImg(bool doUpdate)
         {
             this.doUpdateImg = doUpdate;
+
+            if (doUpdate)
+            {
+                this.screenImg = new Bitmap(this.img, (int)screenWidth, (int)screenHeight);
+                this.palette = ImageMagic.CalculatePalette(this.img, 256);
+                SetDoUpdatePalette(true);
+                paletteWriteIdx = 0;
+            }
         }
 
         public void SetDoUpdatePalette(bool doUpdate)

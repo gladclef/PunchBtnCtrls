@@ -203,8 +203,7 @@ namespace WindowsSnapshots
                     return;
 
                 // check for window change
-                if (lastWindow != currWindow)
-                    btns[screenIdx].SetDoUpdateImg(true);
+                bool btnNeedsUpdate = (lastWindow != currWindow);
 
                 // get some window stats
                 lastWindow = currWindow;
@@ -218,7 +217,7 @@ namespace WindowsSnapshots
                 if ((winSize.Right - winSize.Left) > 0 &&
                     (winSize.Bottom - winSize.Top) > 0)
                 {
-                    btns[screenIdx].SetImage(screen);
+                    btns[screenIdx].SetImage(screen, btnNeedsUpdate);
                     if (btns[screenIdx].doUpdateImg)
                     {
                         QueueImage(screenIdx);

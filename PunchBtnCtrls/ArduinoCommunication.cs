@@ -172,7 +172,6 @@ namespace WindowsSnapshots
                 SendColorPalette(btn.palette);
                 btn.SetDoUpdatePalette(false);
             }
-            usePalette = false;
 
             // send packetized line color data
             byte[] linePart = new byte[62];                   // buffer to be sent

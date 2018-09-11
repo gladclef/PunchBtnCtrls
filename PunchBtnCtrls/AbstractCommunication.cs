@@ -57,7 +57,9 @@ namespace WindowsSnapshots
         /// <param name="startRow">The starting y-index of the row (top).</param>
         /// <param name="rowSpan">The number of vertical pixels to draw this same row over (aka inverse of img resolution).</param>
         /// <returns>True on success, false on failure. If false, then the device is most likely disconnected.</returns>
-        public abstract bool SendImageRow(int[] row, uint startRow, uint rowSpan);
+        public abstract bool SendImageRow(int[] row, uint startRow, uint rowSpan, BtnProps btn);
+
+        public abstract bool SendColorPalette(Palette palette);
 
         /// <summary>
         /// 

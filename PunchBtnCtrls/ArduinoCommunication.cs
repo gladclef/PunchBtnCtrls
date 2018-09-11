@@ -19,6 +19,7 @@ namespace WindowsSnapshots
         public SerialPort arduinoSerial = null;
         private string serialLineIn = "";
         private bool ackReceived = false;
+        private bool waitingForAck = false;
 
         public ArduinoCommunication(SerialPort arduinoSerial, uint screenWidth, StatusChangedDelegate ConnectedCallback = null) : base(screenWidth, ConnectedCallback)
         {
@@ -125,78 +126,106 @@ namespace WindowsSnapshots
             }
         }
 
-        public override bool SendImageRow(int[] line, uint startRow, uint rowSpan)
+        public override bool SendImageRow(int[] line, uint startRow, uint rowSpan, BtnProps btn)
         {
+            Stopwatch timer = new Stopwatch();
+            timer.Start();
+            int idx = 0;
+
+            // check that WIDTH is a multiple of the line length
+            uint colSpan = screenWidth / (uint)line.Length;
+            if (line.Length * colSpan != screenWidth)
+            {
+                throw new ArgumentException($"The display width ({screenWidth}) must be a multiple of the line length ({line.Length})");
+            }
+
+            // send packetized data
+            if (startRow == 0)
+            {
+                byte[] restart = new byte[62];                // buffer to be sent
+                idx = BitBashing.UIntToDecimalBytes(ref restart, 0, 2, 0);
+                restart[idx++] = Convert.ToByte(':');
+                restart[idx++] = Convert.ToByte('R');         // "Reset Draw" command
+                restart[idx++] = Convert.ToByte('L');
+                if (waitingForAck) WaitForAck(1000);
+                if (!CheckedWrite(restart, 0, idx))
+                    return false;
+                waitingForAck = true;
+            }
+
+            // send colSpan and rowSpan
+            byte[] spans = new byte[62];                      // buffer to be sent
+            idx = BitBashing.SIntToDecimalBytes(ref spans, 0, 5, 0);
+            spans[idx++] = Convert.ToByte(':');
+            spans[idx++] = Convert.ToByte('S');               // "Span Size" command
+            idx += BitBashing.UIntToHexBytes(ref spans, idx, colSpan, 2, 2);
+            idx += BitBashing.UIntToHexBytes(ref spans, idx, rowSpan, 2, 2);
+            if (waitingForAck) WaitForAck(1000);
+            if (!CheckedWrite(spans, 0, idx))
+                return false;
+            waitingForAck = true;
+
+            // determine the necessity of a palette and send the palette
+            bool usePalette = btn.palette != null && colSpan < 16 && rowSpan < 16;
+            if (usePalette && startRow == 0 && btn.doUpdatePalette)
+            {
+                SendColorPalette(btn.palette);
+                btn.SetDoUpdatePalette(false);
+            }
+            usePalette = false;
+
+            // send packetized line color data
+            byte[] linePart = new byte[62];                   // buffer to be sent
+            int linePartLen;                                  // packetized line message length
+            int bytesPerPixel = (usePalette) ? 1 : 2;
+            linePartLen = (int)(56 / bytesPerPixel);
+            char command = (usePalette) ? 'l' : 'L';
+            for (int i = 0; i < line.Length; i += linePartLen)
+            {
+                int sendCnt = Math.Min(linePartLen, line.Length - i);
+
+                // prepare the message header
+                int pixelCnt = (usePalette) ? sendCnt : sendCnt * bytesPerPixel;
+                idx = BitBashing.SIntToDecimalBytes(ref linePart, 0, pixelCnt + 1, 0);
+                linePart[idx++] = Convert.ToByte(':');
+                linePart[idx++] = Convert.ToByte(command);    // "Line Part" or "line (palette) Part" command
+
+                // add the color values
+                for (int j = 0; j < sendCnt; j++)
+                {
+                    int col = idx + j * bytesPerPixel;
+                    ushort color16 = ImageMagic.ColorConvert24To16(line[i + j]);
+                    if (usePalette)
+                    {
+                        linePart[col] = btn.palette.GetPaletteColor(color16);
+                    }
+                    else
+                    {
+                        linePart[col + 1] = BitConverter.GetBytes(color16)[0];
+                        linePart[col + 0] = BitConverter.GetBytes(color16)[1];
+                    }
+                }
+
+                // send the message
+                if (waitingForAck) WaitForAck(1000);
+                if (!CheckedWrite(linePart, 0, pixelCnt + idx))
+                    return false;
+                waitingForAck = true;
+            }
+
+            //Console.WriteLine("c#: " + timer.ElapsedMilliseconds);
+
+            return true;
+        }
+
+        private bool CheckedWrite(byte[] toWrite, int offset, int sendCnt)
+        {
+            if (!isConnected)
+                return false;
+
             try
             {
-                Stopwatch timer = new Stopwatch();
-                timer.Start();
-                int idx = 0;
-
-                // check that WIDTH is a multiple of the line length
-                uint colSpan = screenWidth / (uint)line.Length;
-                if (line.Length * colSpan != screenWidth)
-                {
-                    throw new ArgumentException($"The display width ({screenWidth}) must be a multiple of the line length ({line.Length})");
-                }
-
-                // send packetized data
-                if (startRow == 0)
-                {
-                    byte[] restart = new byte[62];                // buffer to be sent
-                    idx = BitBashing.UIntToDecimalBytes(ref restart, 0, 1, 0);
-                    restart[idx++] = Convert.ToByte(':');
-                    restart[idx++] = Convert.ToByte('R');         // "Reset Draw" command
-                    arduinoSerial.Write(restart, 0, idx);
-                    WaitForAck(1000);
-                }
-
-                // send colSpan and rowSpan
-                byte[] spans = new byte[62];                      // buffer to be sent
-                idx = BitBashing.SIntToDecimalBytes(ref spans, 0, 5, 0);
-                spans[idx++] = Convert.ToByte(':');
-                spans[idx++] = Convert.ToByte('S');               // "Span Size" command
-                idx += BitBashing.UIntToHexBytes(ref spans, idx, colSpan, 2, 2);
-                idx += BitBashing.UIntToHexBytes(ref spans, idx, rowSpan, 2, 2);
-                arduinoSerial.Write(spans, 0, idx);
-                WaitForAck(1000);
-
-                // send packetized line color data
-                byte[] linePart = new byte[62];                   // buffer to be sent
-                int linePartLen = Math.Min(28, line.Length);      // packetized line message length
-                for (int i = 0; i < line.Length; i += linePartLen)
-                {
-                    int sendCnt = Math.Min(linePartLen, line.Length - i);
-
-                    // prepare the message header
-                    idx = BitBashing.SIntToDecimalBytes(ref linePart, 0, sendCnt*2 + 1, 0);
-                    linePart[idx++] = Convert.ToByte(':');
-                    linePart[idx++] = Convert.ToByte('L');     // "Line Part" command
-
-                    // add the color values
-                    for (int j = 0; j < sendCnt; j++)
-                    {
-                        // get the color
-                        byte[] color = BitConverter.GetBytes(line[i + j]);
-
-                        // color encoding:
-                        //  - bits: RRRR RGGG GGGB BBBB
-                        //  - hex: R=F800 G=07C0 B=001F
-                        ushort color16 = 0;
-                        color16 |= Convert.ToUInt16((color[0] & 0xF8) << 8); // red
-                        color16 |= Convert.ToUInt16((color[1] & 0xFC) << 3); // green
-                        color16 |= Convert.ToUInt16((color[2] & 0xF8) >> 3); // blue
-
-                        linePart[idx + j*2 + 1] = BitConverter.GetBytes(color16)[0];
-                        linePart[idx + j*2 + 0] = BitConverter.GetBytes(color16)[1];
-                    }
-
-                    // send the message
-                    arduinoSerial.Write(linePart, 0, sendCnt * 2 + idx);
-                    WaitForAck(1000);
-                }
-
-                //Console.WriteLine("c#: " + timer.ElapsedMilliseconds);
+                arduinoSerial.Write(toWrite, offset, sendCnt);
             }
             catch (ArgumentNullException ee)
             {
@@ -228,6 +257,7 @@ namespace WindowsSnapshots
             timeout.Start();
             while (!ackReceived && timeout.ElapsedMilliseconds < millsWait) { }
             ackReceived = false;
+            waitingForAck = false;
         }
 
         public override bool SendString(string data, bool includeNewline = false)
@@ -305,9 +335,58 @@ namespace WindowsSnapshots
             timer.Restart();
             for (uint i = 0; i < 128; i += rowSpan)
             {
-                SendImageRow(line, i, rowSpan);
+                SendImageRow(line, i, rowSpan, null);
             }
             Console.WriteLine(timer.ElapsedMilliseconds);
+        }
+
+        public override bool SendColorPalette(Palette palette)
+        {
+            int idx = 0;
+
+            // send restart message
+            //if (btn.paletteWriteIdx == 0)
+            {
+                byte[] restart = new byte[62];                // buffer to be sent
+                idx = BitBashing.UIntToDecimalBytes(ref restart, 0, 2, 0);
+                restart[idx++] = Convert.ToByte(':');
+                restart[idx++] = Convert.ToByte('R');         // "Reset Palette" command
+                restart[idx++] = Convert.ToByte('P');
+                if (waitingForAck) WaitForAck(1000);
+                if (!CheckedWrite(restart, 0, idx))
+                    return false;
+                waitingForAck = true;
+            }
+
+            // send packetized palette data
+            byte[] palettePart = new byte[62];                // buffer to be sent
+            int palettePartCnt = Math.Min(28, palette.map.Count); // packetized line message length
+            for (int i = 0; i < palette.map.Count; i += palettePartCnt)
+            {
+                int sendCnt = Math.Min(palettePartCnt, palette.map.Count - i);
+
+                // prepare the message header
+                idx = BitBashing.SIntToDecimalBytes(ref palettePart, 0, sendCnt * 2 + 1, 0);
+                palettePart[idx++] = Convert.ToByte(':');
+                palettePart[idx++] = Convert.ToByte('P');     // "Palette Part" command
+
+                // add the color values
+                for (int j = 0; j < sendCnt; j++)
+                {
+                    ushort color16 = palette.map.ElementAt(i + j).Key;
+                    int col = idx + j * 2;
+                    palettePart[col + 1] = BitConverter.GetBytes(color16)[0];
+                    palettePart[col + 0] = BitConverter.GetBytes(color16)[1];
+                }
+
+                // send the message
+                if (waitingForAck) WaitForAck(1000);
+                if (!CheckedWrite(palettePart, 0, sendCnt * 2 + idx))
+                    return false;
+                waitingForAck = true;
+            }
+
+            return true;
         }
     }
 }

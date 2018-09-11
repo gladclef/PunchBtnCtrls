@@ -99,15 +99,16 @@ Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC, TFT_RST);
 //Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
 
 uint16_t rowBuf[WIDTH];
-unsigned char allSerial[WIDTH*2+10];
+unsigned char allSerial[65];
 unsigned char *incomingBytes;
 boolean serialDebugging = false;
 uint16_t currReadX = 0;
 uint16_t currReadY = 0;
-long mills = 0;
 uint16_t colSpan = 1;
 uint16_t rowSpan = 1;
 uint8_t activityIndicator = 1;
+uint16_t colorPalette[256];
+uint8_t colorPaletteIdx = 0;
 
 void setup(void) {
   Serial.begin(BAUD);
@@ -126,7 +127,6 @@ void setup(void) {
 
 	tft.setRotation(1);
   tft.fillScreen(ST77XX_BLACK);
-  mills = millis();
 }
 
 uint8_t currentFillShift = 0x00;
@@ -145,7 +145,7 @@ void loop() {
     }
 	}
 
-	int joy = checkJoystick();
+	int8_t joy = checkJoystick();
 	//printJoystick(joy);
 	if (joy != Neutral)
 	{
@@ -165,15 +165,15 @@ void loop() {
 				currentFillColor--;
 				break;
 		}
-		char currentFillStr[40];
-		sprintf(currentFillStr, "%02x:%02x %04x", currentFillShift, currentFillColor, currentFillColor << currentFillShift);
-		Serial.println(currentFillStr);
-		tft.fillScreen(currentFillColor << currentFillShift);
-		delay(150);
+//		char currentFillStr[40];
+//		sprintf(currentFillStr, "%02x:%02x %04x", currentFillShift, currentFillColor, currentFillColor << currentFillShift);
+//		Serial.println(currentFillStr);
+//		tft.fillScreen(currentFillColor << currentFillShift);
+//		delay(150);
 	}
 }
 
-void drawRow(int rowIdx) {
+void drawRow(uint16_t rowIdx) {
 	bool drawActivityIndicator = true;
 	
 	if (colSpan == 1 && rowSpan == 1) {
@@ -189,15 +189,6 @@ void drawRow(int rowIdx) {
 		for (uint8_t i = 0; i < lineSize; i++)
 		{
 			tft.fillRect(i * colSpan, y, colSpan, rowSpan, rowBuf[i]);
-//			uint8_t xs = i * colSpan;
-//			uint8_t xe = xs + colSpan;
-//			for (uint8_t x = xs; i < xe; x++)
-//			{
-//				for (uint8_t y2 = y; y2 < ye; y2++)
-//				{
-//					tft.drawPixel(x, y2, rowBuf[i]);
-//				}
-//			}
 		}
 	}
 
@@ -211,9 +202,9 @@ void drawRow(int rowIdx) {
 
 // Check the joystick position
 // from https://learn.adafruit.com/1-8-tft-display/reading-the-joystick
-int checkJoystick()
+int8_t checkJoystick()
 {
-  int joystickState = analogRead(3);
+  int8_t joystickState = analogRead(3);
   
   if (joystickState < 50) return Left;
   if (joystickState < 150) return Down;
@@ -224,7 +215,7 @@ int checkJoystick()
 }
 
 // from https://learn.adafruit.com/1-8-tft-display/reading-the-joystick
-void printJoystick(int joy) 
+void printJoystick(int8_t joy) 
 {
   switch (joy)
   {
@@ -257,23 +248,27 @@ void printJoystick(int joy)
  */
 boolean interpretSerial(uint16_t numBytes)
 {
+  uint16_t lineRead = numBytes-1;
   unsigned char command = incomingBytes[0];
+  unsigned char *data = incomingBytes+1;
+	bool isDrawLineCommand = false;
+  
   switch (command)
   {
     case 'C': // Color command: set the testing fill color
     	uint8_t idx;
-    	idx = 2;
+    	idx = 0;
     	if (numBytes < 2)
     		return false;
-    	currentFillColor = (uint8_t)incomingBytes[1] - (uint8_t)'0';
+    	currentFillColor = (uint8_t)data[idx++] - (uint8_t)'0';
     	if (numBytes >= idx+1)
-    		currentFillColor = (currentFillColor * 10) + ((uint8_t)incomingBytes[idx++] - (uint8_t)'0');
+    		currentFillColor = (currentFillColor * 10) + ((uint8_t)data[idx++] - (uint8_t)'0');
     	if (numBytes >= idx+1)
-    		currentFillColor = (currentFillColor * 10) + ((uint8_t)incomingBytes[idx++] - (uint8_t)'0');
+    		currentFillColor = (currentFillColor * 10) + ((uint8_t)data[idx++] - (uint8_t)'0');
     	if (numBytes >= idx+1)
-    		currentFillColor = (currentFillColor * 10) + ((uint8_t)incomingBytes[idx++] - (uint8_t)'0');
+    		currentFillColor = (currentFillColor * 10) + ((uint8_t)data[idx++] - (uint8_t)'0');
     	if (numBytes >= idx+1)
-    		currentFillColor = (currentFillColor * 10) + ((uint8_t)incomingBytes[idx++] - (uint8_t)'0');
+    		currentFillColor = (currentFillColor * 10) + ((uint8_t)data[idx++] - (uint8_t)'0');
     	Serial.print("read color: ");
     	Serial.println(currentFillColor);
 			tft.fillScreen(currentFillColor << currentFillShift);
@@ -281,42 +276,73 @@ boolean interpretSerial(uint16_t numBytes)
     case 'L': // Line Part command: draw the next line part of the image
 //    	Serial.println("Draw");
 //  		delay(SERIAL_WRITE_DELAY);
-      uint16_t lineRead;
-      lineRead = numBytes-1;
-      for (int i = 0; i < lineRead; i+= 2)
+      for (uint16_t i = 0; i < lineRead; i+= 2)
       {
-  			rowBuf[currReadX]  = ((uint8_t)incomingBytes[i + 1]) << 8;
-  			rowBuf[currReadX] |= (uint8_t)incomingBytes[i + 2];
+  			rowBuf[currReadX]  = ((uint8_t)data[i + 0]) << 8;
+  			rowBuf[currReadX] |=  (uint8_t)data[i + 1];
       	currReadX++;
       }
-      if (currReadX * colSpan >= WIDTH)
+      isDrawLineCommand = true;
+      break;
+    case 'l': // Line Part command but using the color pallete
+      for (uint16_t i = 0; i < lineRead; i++)
       {
-      	drawRow(currReadY);
-      	currReadX = 0;
-      	currReadY++;
+  			rowBuf[currReadX++] = colorPalette[data[i]];
       }
-      return true;
-    case 'R': // restart image drawing
+      isDrawLineCommand = true;
+      break;
+    case 'P': // Palette command, for setting the color palette used for drawing
+//    	Serial.println("Palette");
+//  		delay(SERIAL_WRITE_DELAY);
+      for (uint16_t i = 0; i < lineRead; i+= 2)
+      {
+  			colorPalette[colorPaletteIdx]  = ((uint8_t)data[i + 0]) << 8;
+  			colorPalette[colorPaletteIdx] |=  (uint8_t)data[i + 1];
+    		colorPaletteIdx++;
+      }
+    	return true;
+    case 'R': // restart image or pallete drawing
 //    	Serial.println("Restart");
 //  		delay(SERIAL_WRITE_DELAY);
-    	currReadX = 0;
-    	currReadY = 0;
-      return true;
+			switch (data[0])
+			{
+				case 'L':
+		    	currReadX = 0;
+		    	currReadY = 0;
+		    	break;
+	    	case 'P':
+	    		colorPaletteIdx = 0;
+	    		break;
+    		default:
+    			return false;
+			}
+			return true;
     case 'S': // Span Size command
       if (numBytes < 5)
       	return false;
-    	colSpan  = ((uint8_t)incomingBytes[1]) << 8;
-    	colSpan |= ((uint8_t)incomingBytes[2]);
-    	rowSpan  = ((uint8_t)incomingBytes[3]) << 8;
-    	rowSpan |= ((uint8_t)incomingBytes[4]);
+    	colSpan  = ((uint8_t)data[0]) << 8;
+    	colSpan |= ((uint8_t)data[1]);
+    	rowSpan  = ((uint8_t)data[2]) << 8;
+    	rowSpan |= ((uint8_t)data[3]);
     	return true;
     default:
 			char errStr[40];
-			sprintf(errStr, "Unrecognized command \"%c\" (%d)", (char)command, (int)command);
+			sprintf(errStr, "Unrecognized command \"%c\" (%d)", (char)command, (uint8_t)command);
     	Serial.println(errStr);
   		delay(SERIAL_WRITE_DELAY);
       return false;
   } // switch (command)
+
+  if (isDrawLineCommand)
+  {
+    if (currReadX * colSpan >= WIDTH)
+    {
+    	drawRow(currReadY);
+    	currReadX = 0;
+    	currReadY++;
+    }
+    return true;
+  }
   
   return false;
 }

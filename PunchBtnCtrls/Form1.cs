@@ -55,9 +55,9 @@ namespace WindowsSnapshots
 
             for (int screenIdx = 0; screenIdx < btns.Count; screenIdx++)
             {
-                if (!btns[screenIdx].updated)
+                if (!btns[screenIdx].doUpdateImg)
                     continue;
-                btns[screenIdx].SetUpdated(false);
+                btns[screenIdx].SetDoUpdateImg(false);
 
                 // update the button image in the GUI window
                 Bitmap btnImg = btns[screenIdx].img;
@@ -66,12 +66,6 @@ namespace WindowsSnapshots
                     imgs[screenIdx] = btnImg;
                     ResizeImageForPB(GetPictureBox(screenIdx), btnImg);
                 }
-            }
-
-            // update the managers (TODO replace with threads in the managers)
-            foreach (var manager in managers)
-            {
-                ((WindowBtnManager)manager).Update();
             }
         }
 

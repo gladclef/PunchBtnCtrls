@@ -44,6 +44,8 @@ namespace WindowsSnapshots
         private List<int> highResUpdates = new List<int>();
         /// <summary>Used to syncronize accesses to the updates and the QueueImages() method.</summary>
         private System.Threading.Mutex queueMutex = new System.Threading.Mutex();
+        private System.Threading.Thread updateThread = null;
+        private bool parentClosed = false;
         
         public IntPtr lastWindow = IntPtr.Zero;
         public string lastWindowText = null;
@@ -74,6 +76,16 @@ namespace WindowsSnapshots
             recaptureTimer.Tick += recaptureTimer_Tick;
             recaptureTimer.Interval = 1000;
             recaptureTimer.Start();
+
+            parent.FormClosed += ParentClosed;
+            updateThread = new System.Threading.Thread(
+                new System.Threading.ThreadStart(ThreadedUpdate));
+            updateThread.Start();
+        }
+
+        private void ParentClosed(object sender, FormClosedEventArgs e)
+        {
+            this.parentClosed = true;
         }
 
         public override void OnClick(int idx)
@@ -192,7 +204,7 @@ namespace WindowsSnapshots
 
                 // check for window change
                 if (lastWindow != currWindow)
-                    btns[screenIdx].SetUpdated(true);
+                    btns[screenIdx].SetDoUpdateImg(true);
 
                 // get some window stats
                 lastWindow = currWindow;
@@ -207,10 +219,10 @@ namespace WindowsSnapshots
                     (winSize.Bottom - winSize.Top) > 0)
                 {
                     btns[screenIdx].SetImage(screen);
-                    if (btns[screenIdx].updated)
+                    if (btns[screenIdx].doUpdateImg)
                     {
                         QueueImage(screenIdx);
-                        btns[screenIdx].updated = false;
+                        btns[screenIdx].doUpdateImg = false;
                     }
                 }
             }
@@ -297,6 +309,16 @@ namespace WindowsSnapshots
             }
         }
 
+        public void ThreadedUpdate()
+        {
+            while (!parentClosed)
+            {
+                Update();
+                System.Threading.Thread.Sleep(1);
+            }
+        }
+
+        Stopwatch swFrame = new Stopwatch();
         /// <summary>
         /// Draws lines from the images waiting in the update stacks/queues.
         /// Only draws one line of the most low-res image to keep the thread responsive.
@@ -362,36 +384,20 @@ namespace WindowsSnapshots
 
                 // calculate the line to draw
                 int[] line = new int[btn.screenWidth / colSpan];
-                for (uint col = 0; col < line.Length; col++)
-                {
-                    int x = (int)(col * colSpan);
-                    uint[] uc = new uint[4];
-                    for (int i = 0; i < colSpan; i++)
-                    {
-                        for (int j = 0; j < rowSpan; j++)
-                        {
-                            int y = (int)(btn.rowIdx[res] * rowSpan);
-                            Color c = img.GetPixel(x + i, y + j);
-                            uc[0] += c.R;
-                            uc[1] += c.G;
-                            uc[2] += c.B;
-                        }
-                    }
-                    byte[] bc = new byte[4];
-                    bc[0] = Convert.ToByte(uc[0] / (colSpan * rowSpan));
-                    bc[1] = Convert.ToByte(uc[1] / (colSpan * rowSpan));
-                    bc[2] = Convert.ToByte(uc[2] / (colSpan * rowSpan));
-                    line[col] = BitConverter.ToInt32(bc, 0);
-                }
+                CalculateNextDrawCommand(colSpan, rowSpan, btn, res, line);
 
                 // draw the line
-                if (!btn.comm.SendImageRow(line, btn.rowIdx[res], rowSpan))
+                if (btn.rowIdx[res] == 0)
+                    swFrame.Restart();
+                if (!btn.comm.SendImageRow(line, btn.rowIdx[res], rowSpan, btn))
                     return false;
 
                 // prepare for next time this function is called
                 btn.rowIdx[res]++;
-                if (btn.rowIdx[res] * rowSpan >= btn.screenHeight)
+                if (btn.rowIdx[res] * rowSpan >= btn.screenHeight) {
                     btn.rowIdx[res] = 0;
+                    Console.WriteLine(swFrame.ElapsedMilliseconds);
+                }
             }
             finally
             {
@@ -399,6 +405,61 @@ namespace WindowsSnapshots
             }
 
             return true;
+        }
+
+        private static void CalculateNextDrawCommand(uint colSpan, uint rowSpan, BtnProps btn, int res, int[] line)
+        {
+            Bitmap img = btn.screenImg;
+
+            for (uint col = 0; col < line.Length; col++)
+            {
+                int x = (int)(col * colSpan);
+
+                if (colSpan == 1 && rowSpan == 1)
+                {
+                    // nothing to average for a 1x1 square of color
+                    line[col] = ImageMagic.ColorConvertColorToInt(img.GetPixel(x, (int)btn.rowIdx[res]));
+                }
+                else if (colSpan * rowSpan < 625_000) // arbitrary 10MB limit
+                {
+                    // calculate the median color
+                    List<Tuple<Color, int>> colorSwatch = new List<Tuple<Color, int>>((int)(colSpan * rowSpan));
+                    colorSwatch.OrderBy(t => t.Item2);
+                    for (int i = 0; i < colSpan; i++)
+                    {
+                        for (int j = 0; j < rowSpan; j++)
+                        {
+                            int y = (int)(btn.rowIdx[res] * rowSpan);
+                            Color color = img.GetPixel(x + i, y + j);
+                            int intensity = color.R + color.G + color.B;
+                            colorSwatch.Add(new Tuple<Color, int>(color, intensity));
+                        }
+                    }
+                    Color c = colorSwatch[colorSwatch.Count / 2].Item1;
+                    line[col] = ImageMagic.ColorConvertColorToInt(c);
+                }
+                else
+                {
+                    // calculate the average color
+                    ulong[] uc = new ulong[4];
+                    for (int i = 0; i < colSpan; i++)
+                    {
+                        for (int j = 0; j < rowSpan; j++)
+                        {
+                            int y = (int)(btn.rowIdx[res] * rowSpan);
+                            Color color = img.GetPixel(x + i, y + j);
+                            uc[0] += color.R;
+                            uc[1] += color.G;
+                            uc[2] += color.B;
+                        }
+                    }
+                    uint pixelCnt = colSpan * rowSpan;
+                    uint r = (uint)uc[0] / pixelCnt;
+                    uint g = (uint)uc[1] / pixelCnt;
+                    uint b = (uint)uc[2] / pixelCnt;
+                    line[col] = ImageMagic.ColorConvertRGBTo24(r, g, b);
+                }
+            }
         }
     }
 }

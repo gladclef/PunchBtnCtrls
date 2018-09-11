@@ -11,18 +11,28 @@ namespace WindowsSnapshots
 {
     public class BtnProps
     {
+        /// <summary>The button index (from left to right, starting with 0).</summary>
         public int idx = -1;
+        /// <summary>The latest image for this button.</summary>
         public Bitmap img = null;
         /// <summary>Like <see cref="img"/>, but appropriatly resized for the screen.</summary>
         public Bitmap screenImg = null;
         public uint screenWidth, screenHeight;
         public Form parent;
+        /// <summary>If there is a GUI element that this button draws to, this would be it.</summary>
         public Control pictureBox;
         public BtnManager.clickCallback OnClick = null;
-        public bool updated = false;
         public AbstractCommunication comm = null;
         /// <summary>row drawing update indexes for low (0), medium (1), and high resolution (2)</summary>
         public uint[] rowIdx = new uint[3];
+        /// <summary>A highly reduced color set to write with instead of the full color set (so that we can send pixel data with one byte instead of two).</summary>
+        public Palette palette = new Palette();
+        /// <summary>The location in the palette that will be written out next.</summary>
+        public int paletteWriteIdx = 0;
+        /// <summary>True if we need to push updated image data to this button.</summary>
+        public bool doUpdateImg = false;
+        /// <summary>True if we need to push an updated palette to this button.</summary>
+        public bool doUpdatePalette = false;
 
         public BtnProps(int idx, uint screenWidth, uint screenHeight, Form parent, BtnManager.clickCallback OnClick)
         {
@@ -68,11 +78,19 @@ namespace WindowsSnapshots
         {
             this.img = img;
             this.screenImg = new Bitmap(img, (int)screenWidth, (int)screenHeight);
+            this.palette = ImageMagic.CalculatePalette(img, 256);
+            SetDoUpdatePalette(true);
+            paletteWriteIdx = 0;
         }
 
-        public void SetUpdated(bool updated)
+        public void SetDoUpdateImg(bool doUpdate)
         {
-            this.updated = updated;
+            this.doUpdateImg = doUpdate;
+        }
+
+        public void SetDoUpdatePalette(bool doUpdate)
+        {
+            this.doUpdatePalette = doUpdate;
         }
     }
 }

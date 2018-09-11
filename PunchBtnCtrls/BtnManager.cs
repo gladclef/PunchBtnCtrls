@@ -95,9 +95,9 @@ namespace WindowsSnapshots
                     btns.Add(new BtnProps(screenIdx, GetWidth(screenIdx), GetHeight(screenIdx), parent, null));
                 }
                 int startCreateIdx = Math.Max(startIdx, btns.Count);
-                for (int i = startCreateIdx; i < endIdx; i++)
+                for (int screenIdx = startCreateIdx; screenIdx < endIdx; screenIdx++)
                 {
-                    btns.Add(new BtnProps(i, GetWidth(i), GetHeight(i), parent, OnClickGeneral));
+                    btns.Add(new BtnProps(screenIdx, GetWidth(screenIdx), GetHeight(screenIdx), parent, OnClickGeneral));
                 }
             }
             finally

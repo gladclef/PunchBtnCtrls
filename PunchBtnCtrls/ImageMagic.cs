@@ -12,7 +12,7 @@ namespace WindowsSnapshots
         public static Palette CalculatePalette(Bitmap img, int paletteSize)
         {
             Palette palette = new Palette();
-            bool first = true;
+            Palette lastGoodPalette = null;
 
             // sanity check
             if (paletteSize < 8)
@@ -25,28 +25,44 @@ namespace WindowsSnapshots
             }
 
             // reduce the mask length until we have the right number of colors
-            do
+            while (true)
             {
-                // generate smaller masks for the next run
-                if (first)
-                    palette.ReduceSpectrum();
-                first = false;
-
                 // count the number of colors, maybe there are only paletteSize colors?!
+                bool tooManyColors = false;
                 for (int x = 0; x < img.Width; x++)
                 {
                     for (int y = 0; y < img.Height; y++)
                     {
-                        if (palette.map.Count >= 255)
+                        if (palette.map.Count >= 255) {
+                            tooManyColors = true;
                             break;
+                        }
                         palette.GetPaletteColor(img.GetPixel(x, y));
                     }
                     if (palette.map.Count > paletteSize)
                         break;
                 }
-            } while (palette.map.Count > paletteSize);
 
-            return palette;
+                // check for a good palette
+                if (!tooManyColors && palette.map.Count > 0)
+                {
+                    lastGoodPalette = palette;
+                    palette = new Palette(palette);
+                    if (!palette.IncreaseSpetrum())
+                        break;
+                }
+                else
+                {
+                    // did we already find the best palette?
+                    if (lastGoodPalette != null)
+                        break;
+
+                    // generate smaller masks for the next run
+                    palette.ReduceSpectrum();
+                }
+            }
+
+            return lastGoodPalette;
         }
 
         /// <summary>
@@ -109,10 +125,24 @@ namespace WindowsSnapshots
 
     public class Palette
     {
-        byte rMask = 0xE0, gMask = 0xF0, bMask = 0xE0;
-        ushort cMask = 0xE000 | (0xF0 << 3) | (0xE0 >> 3);
-        bool reduceGreenMask = true;
+        byte[] mask = new byte[] { 0xF8 /*red*/, 0xFC /*green*/, 0xF8 /*blue*/ };
+        ushort cMask = 0;
+        int increaseMask = 1;
         public Dictionary<ushort, byte> map = new Dictionary<ushort, byte>();
+
+        public Palette()
+        {
+            updateFullMask();
+        }
+
+        /// <summary>
+        /// Creates a new palette with the same color masks.
+        /// </summary>
+        public Palette(Palette palette)
+        {
+            Buffer.BlockCopy(palette.mask, 0, this.mask, 0, Buffer.ByteLength(this.mask));
+            updateFullMask();
+        }
 
         /// <summary>
         /// Reduces the masks used to produce a color map.
@@ -120,17 +150,56 @@ namespace WindowsSnapshots
         /// </summary>
         public void ReduceSpectrum()
         {
-            if (reduceGreenMask)
+            for (int i = 0; i < mask.Length; i++)
             {
-                gMask = Convert.ToByte((gMask & 0x7F) << 1);
+                mask[i] = Convert.ToByte((mask[i] & 0x7F) << 1);
             }
-            else
-            {
-                rMask = Convert.ToByte((rMask & 0x7F) << 1);
-                bMask = Convert.ToByte((bMask & 0x7F) << 1);
-            }
-            cMask = (ushort)((rMask << 8) | (gMask << 3) | (bMask >> 3));
+            updateFullMask();
             map.Clear();
+        }
+
+        /// <summary>
+        /// Increases the masks used to produce a color map.
+        /// </summary>
+        /// <return>True on success, false if the color spectrum can't be increased.</return>
+        internal bool IncreaseSpetrum()
+        {
+            for (int i = 0; i < mask.Length; i++)
+            {
+                // find the mask to increase
+                int maskIdx = (increaseMask + i) % mask.Length;
+
+                // check that we don't exceed our 16bit color boundaries
+                if (maskIdx == 0 || maskIdx == 2)
+                {
+                    if (mask[maskIdx] == 0xF8)
+                    {
+                        continue;
+                    }
+                }
+                else
+                {
+                    if (mask[maskIdx] == 0xFC)
+                    {
+                        continue;
+                    }
+                }
+
+                // increase the mask
+                mask[maskIdx] = Convert.ToByte((mask[maskIdx] >> 1) | 0x80);
+                updateFullMask();
+                maskIdx++;
+
+                // success!
+                return true;
+            }
+
+            return false;
+        }
+
+        private void updateFullMask()
+        {
+            cMask = (ushort)((mask[0] << 8) | (mask[1] << 3) | (mask[2] >> 3));
         }
 
         /// <summary>
